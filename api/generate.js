@@ -10,113 +10,118 @@ function generateSVG(data) {
 
   function pill(v, s, unit) {
     const ok = Number(v) >= s;
-    const bg = ok ? '#d1fae5' : '#fee2e2';
-    const color = ok ? '#065f46' : '#dc2626';
-    const icon = ok ? '✓' : '!';
-    return { bg, color, text: `${icon} ${Number(v).toLocaleString()} ${unit}` };
+    return {
+      bg: ok ? '#d1fae5' : '#fee2e2',
+      color: ok ? '#065f46' : '#dc2626',
+      text: `${ok?'✓':'!'} ${Number(v).toLocaleString()} ${unit}`
+    };
   }
   function pillB(has) {
     return { bg: has?'#d1fae5':'#fee2e2', color: has?'#065f46':'#dc2626', text: has?'✓ 已投保':'! 未投保' };
   }
 
+  // Scale 2x for crisp rendering
+  const S = 2;
+  const W = 900 * S;
+  const H = 940 * S;
+
   function row(x, y, emoji, label, p) {
+    const rx = x * S, ry = y * S;
     return `
-    <text x="${x}" y="${y+4}" font-size="15" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">${emoji}</text>
-    <text x="${x+24}" y="${y+4}" font-size="12" fill="#374151" font-family="Arial,sans-serif">${label}</text>
-    <rect x="${x+185}" y="${y-13}" width="90" height="19" rx="9" fill="${p.bg}"/>
-    <text x="${x+230}" y="${y+2}" font-size="10" fill="${p.color}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${p.text}</text>`;
+    <text x="${rx}" y="${ry+5}" font-size="${13*S}" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">${emoji}</text>
+    <text x="${rx+26*S}" y="${ry+5}" font-size="${11*S}" fill="#374151" font-family="Arial,sans-serif">${label}</text>
+    <rect x="${rx+192*S}" y="${ry-13*S}" width="${88*S}" height="${19*S}" rx="${9*S}" fill="${p.bg}"/>
+    <text x="${rx+236*S}" y="${ry+2}" font-size="${9.5*S}" fill="${p.color}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${p.text}</text>`;
   }
 
   const lifeOk = Number(life) >= 500;
 
+  // Card positions (in logical coords, will be scaled)
+  const TL = {x:18, y:18, w:390, h:320};
+  const TR = {x:492, y:18, w:390, h:320};
+  const BL = {x:18, y:610, w:390, h:320};
+  const BR = {x:492, y:610, w:390, h:320};
+  const CY = 470; // center Y
+
+  function card(c, titleEmoji, title, subtitle, titleColor, headerBg, rows) {
+    const x=c.x*S, y=c.y*S, w=c.w*S, h=c.h*S, r=18*S;
+    return `
+    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="white" filter="url(#sh)"/>
+    <clipPath id="clip${title}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}"/></clipPath>
+    <rect x="${x}" y="${y}" width="${w}" height="${58*S}" fill="${headerBg}" clip-path="url(#clip${title})"/>
+    <text x="${x+16*S}" y="${y+36*S}" font-size="${22*S}" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">${titleEmoji}</text>
+    <text x="${x+56*S}" y="${y+37*S}" font-size="${20*S}" fill="${titleColor}" font-weight="bold" font-family="Arial,sans-serif">${title}</text>
+    <text x="${x+56*S}" y="${y+52*S}" font-size="${10*S}" fill="${titleColor}" opacity="0.6" font-family="Arial,sans-serif">${subtitle}</text>
+    ${rows}`;
+  }
+
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="900" height="960" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#f0f0ff"/>
       <stop offset="100%" stop-color="#fdf2f8"/>
     </linearGradient>
-    <linearGradient id="ring1" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#a78bfa"/>
       <stop offset="100%" stop-color="#ec4899"/>
     </linearGradient>
-    <filter id="shadow">
-      <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#00000015"/>
+    <filter id="sh" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="${2*S}" stdDeviation="${8*S}" flood-color="#00000012"/>
     </filter>
   </defs>
 
-  <!-- Background -->
-  <rect width="900" height="960" fill="url(#bg)"/>
+  <rect width="${W}" height="${H}" fill="url(#bg)"/>
 
-  <!-- TL: 小疾病 (blue) -->
-  <rect x="20" y="20" width="390" height="340" rx="20" fill="white" filter="url(#shadow)"/>
-  <rect x="20" y="20" width="390" height="60" rx="20" fill="#eff6ff"/>
-  <rect x="20" y="60" width="390" height="20" fill="#eff6ff"/>
-  <text x="75" y="58" font-size="22" font-weight="bold" fill="#1d4ed8" font-family="Arial,sans-serif">小疾病</text>
-  <text x="75" y="75" font-size="11" fill="#93c5fd" font-family="Arial,sans-serif">住院相關保障</text>
-  <text x="38" y="62" font-size="26" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">🏥</text>
-  ${row(35, 115, '🛏️', '住院日額（實支+定額）', pill(daily, 3000, '元/天'))}
-  ${row(35, 150, '✂️', '手術（實支實付）', pill(surgeryFixed, 50000, '元'))}
-  ${row(35, 185, '🔪', '手術（定額手術）', pill(surgeryFixed, 50000, '元'))}
-  ${row(35, 220, '💊', '雜費', pill(inpatient, 100000, '元'))}
+  <!-- TL 小疾病 -->
+  ${card(TL,'🏥','小疾病','住院相關保障','#1d4ed8','#eff6ff',`
+    ${row(TL.x+18, TL.y+85, '🛏️', '住院日額（實支+定額）', pill(daily,3000,'元/天'))}
+    ${row(TL.x+18, TL.y+120, '✂️', '手術（實支實付）', pill(surgeryFixed,50000,'元'))}
+    ${row(TL.x+18, TL.y+155, '🔪', '手術（定額手術）', pill(surgeryFixed,50000,'元'))}
+    ${row(TL.x+18, TL.y+190, '💊', '雜費', pill(inpatient,100000,'元'))}
+  `)}
 
-  <!-- TR: 小意外 (pink) -->
-  <rect x="490" y="20" width="390" height="340" rx="20" fill="white" filter="url(#shadow)"/>
-  <rect x="490" y="20" width="390" height="60" rx="20" fill="#fff1f2"/>
-  <rect x="490" y="60" width="390" height="20" fill="#fff1f2"/>
-  <text x="545" y="58" font-size="22" font-weight="bold" fill="#e11d48" font-family="Arial,sans-serif">小意外</text>
-  <text x="545" y="75" font-size="11" fill="#fda4af" font-family="Arial,sans-serif">意外相關保障</text>
-  <text x="508" y="62" font-size="26" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">🩹</text>
-  ${row(505, 115, '🏥', '意外門診', pill(accident, 10000, '元'))}
-  ${row(505, 150, '🦴', '骨折未住院', pill(fracture, 30000, '元'))}
-  ${row(505, 185, '🛏️', '意外住院日額', pillB(Number(daily)>0))}
+  <!-- TR 小意外 -->
+  ${card(TR,'🩹','小意外','意外相關保障','#be123c','#fff1f2',`
+    ${row(TR.x+18, TR.y+85, '🚑', '意外門診', pill(accident,10000,'元'))}
+    ${row(TR.x+18, TR.y+120, '🦴', '骨折未住院', pill(fracture,30000,'元'))}
+    ${row(TR.x+18, TR.y+155, '🛏️', '意外住院日額', pillB(Number(daily)>0))}
+  `)}
 
-  <!-- BL: 大疾病 (purple) -->
-  <rect x="20" y="600" width="390" height="340" rx="20" fill="white" filter="url(#shadow)"/>
-  <rect x="20" y="600" width="390" height="60" rx="20" fill="#f5f3ff"/>
-  <rect x="20" y="640" width="390" height="20" fill="#f5f3ff"/>
-  <text x="75" y="638" font-size="22" font-weight="bold" fill="#7c3aed" font-family="Arial,sans-serif">大疾病</text>
-  <text x="75" y="655" font-size="11" fill="#c4b5fd" font-family="Arial,sans-serif">重大疾病保障</text>
-  <text x="38" y="642" font-size="26" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">🎗️</text>
-  ${row(35, 695, '💓', '重大傷病', pill(critical, 100, '萬'))}
-  ${row(35, 730, '🛡️', '重大疾病', pill(critical, 100, '萬'))}
-  ${row(35, 765, '🎗️', '癌症一次金', pill(cancer, 100, '萬'))}
-  ${row(35, 800, '💉', '化療', pill(0, 50, '萬'))}
-  ${row(35, 835, '☢️', '放療', pill(0, 50, '萬'))}
-  ${row(35, 870, '🏥', '癌症住院', pill(0, 3000, '元/日'))}
-  ${row(35, 905, '👴', '長照月給付', pill(ltc, 30000, '元/月'))}
+  <!-- BL 大疾病 -->
+  ${card(BL,'🎗️','大疾病','重大疾病保障','#6d28d9','#f5f3ff',`
+    ${row(BL.x+18, BL.y+85, '💓', '重大傷病', pill(critical,100,'萬'))}
+    ${row(BL.x+18, BL.y+120, '🛡️', '重大疾病', pill(critical,100,'萬'))}
+    ${row(BL.x+18, BL.y+155, '🎗️', '癌症一次金', pill(cancer,100,'萬'))}
+    ${row(BL.x+18, BL.y+190, '💉', '化療/放療/癌症住院', pill(0,1,'萬'))}
+    ${row(BL.x+18, BL.y+225, '👴', '長照月給付', pill(ltc,30000,'元/月'))}
+  `)}
 
-  <!-- BR: 大意外 (orange) -->
-  <rect x="490" y="600" width="390" height="340" rx="20" fill="white" filter="url(#shadow)"/>
-  <rect x="490" y="600" width="390" height="60" rx="20" fill="#fff7ed"/>
-  <rect x="490" y="640" width="390" height="20" fill="#fff7ed"/>
-  <text x="545" y="638" font-size="22" font-weight="bold" fill="#c2410c" font-family="Arial,sans-serif">大意外</text>
-  <text x="545" y="655" font-size="11" fill="#fdba74" font-family="Arial,sans-serif">意外相關保障</text>
-  <text x="508" y="642" font-size="26" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">⚡</text>
-  ${row(505, 695, '🏃', '意外身故', pill(accDeath, 500, '萬'))}
-  ${row(505, 730, '♿', '殘廢', pill(disability, 500, '萬'))}
-  ${row(505, 765, '🤝', '全殘', pill(disability, 500, '萬'))}
+  <!-- BR 大意外 -->
+  ${card(BR,'⚡','大意外','意外相關保障','#c2410c','#fff7ed',`
+    ${row(BR.x+18, BR.y+85, '🏃', '意外身故', pill(accDeath,500,'萬'))}
+    ${row(BR.x+18, BR.y+120, '♿', '殘廢（1-11級）', pill(disability,500,'萬'))}
+    ${row(BR.x+18, BR.y+155, '🤝', '全殘', pill(disability,500,'萬'))}
+  `)}
 
-  <!-- Center circle: 壽險 -->
-  <circle cx="450" cy="480" r="115" fill="white" filter="url(#shadow)"/>
-  <circle cx="450" cy="480" r="108" fill="white"/>
-  <circle cx="450" cy="480" r="108" fill="none" stroke="url(#ring1)" stroke-width="6"/>
-  <!-- Shield icon -->
-  <text x="450" y="448" font-size="40" text-anchor="middle" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">🛡️</text>
-  <text x="450" y="480" font-size="22" fill="#7c3aed" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">壽險</text>
-  <text x="450" y="502" font-size="${Number(life)>999?'16':'20'}" fill="#1e293b" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${life ? life+'萬' : '⚠️ 未投保'}</text>
-  ${!lifeOk ? `<text x="450" y="522" font-size="11" fill="#dc2626" text-anchor="middle" font-family="Arial,sans-serif">建議500萬以上</text>` : `<text x="450" y="522" font-size="11" fill="#065f46" text-anchor="middle" font-family="Arial,sans-serif">✓ 保額充足</text>`}
+  <!-- Cross lines -->
+  <line x1="${450*S}" y1="${18*S}" x2="${450*S}" y2="${350*S}" stroke="#d1d5db" stroke-width="${2*S}" stroke-dasharray="${8*S},${5*S}"/>
+  <line x1="${450*S}" y1="${590*S}" x2="${450*S}" y2="${930*S}" stroke="#d1d5db" stroke-width="${2*S}" stroke-dasharray="${8*S},${5*S}"/>
+  <line x1="${18*S}" y1="${CY*S}" x2="${358*S}" y2="${CY*S}" stroke="#d1d5db" stroke-width="${2*S}" stroke-dasharray="${8*S},${5*S}"/>
+  <line x1="${542*S}" y1="${CY*S}" x2="${882*S}" y2="${CY*S}" stroke="#d1d5db" stroke-width="${2*S}" stroke-dasharray="${8*S},${5*S}"/>
 
-  <!-- Cross dividers -->
-  <line x1="450" y1="20" x2="450" y2="360" stroke="#e5e7eb" stroke-width="2" stroke-dasharray="6,4"/>
-  <line x1="450" y1="600" x2="450" y2="940" stroke="#e5e7eb" stroke-width="2" stroke-dasharray="6,4"/>
-  <line x1="20" y1="480" x2="360" y2="480" stroke="#e5e7eb" stroke-width="2" stroke-dasharray="6,4"/>
-  <line x1="540" y1="480" x2="880" y2="480" stroke="#e5e7eb" stroke-width="2" stroke-dasharray="6,4"/>
+  <!-- Center life insurance circle -->
+  <circle cx="${450*S}" cy="${CY*S}" r="${118*S}" fill="white" filter="url(#sh)"/>
+  <circle cx="${450*S}" cy="${CY*S}" r="${110*S}" fill="white"/>
+  <circle cx="${450*S}" cy="${CY*S}" r="${110*S}" fill="none" stroke="url(#ring)" stroke-width="${6*S}"/>
+  <text x="${450*S}" y="${(CY-32)*S}" font-size="${38*S}" text-anchor="middle" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">🛡️</text>
+  <text x="${450*S}" y="${(CY+8)*S}" font-size="${18*S}" fill="#7c3aed" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">壽險保額</text>
+  <text x="${450*S}" y="${(CY+32)*S}" font-size="${life?22*S:16*S}" fill="${lifeOk?'#065f46':'#dc2626'}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${life ? life+'萬' : '⚠️ 未投保'}</text>
+  ${!lifeOk ? `<text x="${450*S}" y="${(CY+52)*S}" font-size="${10*S}" fill="#dc2626" text-anchor="middle" font-family="Arial,sans-serif">建議500萬以上</text>` : `<text x="${450*S}" y="${(CY+52)*S}" font-size="${10*S}" fill="#065f46" text-anchor="middle" font-family="Arial,sans-serif">✓ 保額充足</text>`}
 
   <!-- Footer -->
-  <circle cx="420" cy="945" r="12" fill="#7c3aed" opacity="0.15"/>
-  <text x="435" y="949" font-size="12" fill="#7c3aed" font-weight="bold" font-family="Arial,sans-serif">安心守護・全面保障</text>
-  <text x="450" y="965" font-size="10" fill="#94a3b8" text-anchor="middle" font-family="Arial,sans-serif">${name}・保障險保險分析</text>
+  <text x="${450*S}" y="${920*S}" font-size="${13*S}" fill="#7c3aed" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">安心守護・全面保障</text>
+  <text x="${450*S}" y="${936*S}" font-size="${10*S}" fill="#94a3b8" text-anchor="middle" font-family="Arial,sans-serif">${name} · 保寶險保障分析報告</text>
 </svg>`;
 }
 
@@ -134,7 +139,6 @@ module.exports = async (req, res) => {
     const boundary = 'B' + Date.now();
     const timestamp = Math.floor(Date.now() / 1000);
     const sig = crypto.createHash('sha1').update(`format=png&timestamp=${timestamp}${API_SECRET}`).digest('hex');
-
     const uploadBody = [
       `--${boundary}\r\nContent-Disposition: form-data; name="file"\r\n\r\ndata:image/svg+xml;base64,${svgB64}`,
       `--${boundary}\r\nContent-Disposition: form-data; name="format"\r\n\r\npng`,
@@ -163,7 +167,6 @@ module.exports = async (req, res) => {
       r.on('error', reject);
       r.write(uploadBody); r.end();
     });
-
     res.json({ url });
   } catch(e) {
     console.error('Error:', e.message);
