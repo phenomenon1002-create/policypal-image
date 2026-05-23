@@ -6,122 +6,147 @@ const API_KEY = '989282614168298';
 const API_SECRET = 'hyP7yp3zKmfkj-g--cdQLTZr9iw';
 
 function generateSVG(data) {
-  const { name='', age='', daily=0, surgeryFixed=0, inpatient=0, fracture=0, accident=0, accDeath=0, disability=0, critical=0, cancer=0, ltc=0, life=0 } = data;
+  const { name='', daily=0, surgeryFixed=0, inpatient=0, fracture=0, accident=0, accDeath=0, disability=0, critical=0, cancer=0, ltc=0, life=0 } = data;
 
-  function pill(v, s, unit) {
-    const ok = Number(v) >= s;
-    return {
-      bg: ok ? '#d1fae5' : '#fee2e2',
-      color: ok ? '#065f46' : '#dc2626',
-      text: `${ok?'✓':'!'} ${Number(v).toLocaleString()} ${unit}`
-    };
+  const W = 1800, H = 1800;
+  const CX = 900, CY = 900;
+  const R = 150; // life circle radius
+  const GAP = 8;
+  const CARD_W = CX - R - GAP - 20;
+  const CARD_H = CY - R - GAP - 20;
+
+  function ok(v, s) { return Number(v) >= s; }
+
+  function pillSVG(x, y, v, s, unit) {
+    const isOk = ok(v, s);
+    const bg = isOk ? '#d1fae5' : '#fee2e2';
+    const color = isOk ? '#065f46' : '#dc2626';
+    const icon = isOk ? '✓' : '!';
+    const text = `${icon} ${Number(v).toLocaleString()} ${unit}`;
+    return `<rect x="${x}" y="${y-22}" width="220" height="34" rx="17" fill="${bg}"/>
+    <text x="${x+110}" y="${y+1}" font-size="22" fill="${color}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${text}</text>`;
   }
-  function pillB(has) {
-    return { bg: has?'#d1fae5':'#fee2e2', color: has?'#065f46':'#dc2626', text: has?'✓ 已投保':'! 未投保' };
+
+  function pillBoolSVG(x, y, has) {
+    const bg = has ? '#d1fae5' : '#fee2e2';
+    const color = has ? '#065f46' : '#dc2626';
+    const text = has ? '✓ 已投保' : '! 未投保';
+    return `<rect x="${x}" y="${y-22}" width="220" height="34" rx="17" fill="${bg}"/>
+    <text x="${x+110}" y="${y+1}" font-size="22" fill="${color}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${text}</text>`;
   }
 
-  // Scale 2x for crisp rendering
-  const S = 2;
-  const W = 900 * S;
-  const H = 940 * S;
+  function rowSVG(x, y, label, pillX, pillContent) {
+    return `<text x="${x}" y="${y}" font-size="26" fill="#374151" font-family="Arial,sans-serif">${label}</text>
+    ${pillContent(pillX, y)}`;
+  }
 
-  function row(x, y, emoji, label, p) {
-    const rx = x * S, ry = y * S;
+  // Card positions (tight to center circle)
+  const TLx = 20, TLy = 20;
+  const TRx = CX + R + GAP, TRy = 20;
+  const BLx = 20, BLy = CY + R + GAP;
+  const BRx = CX + R + GAP, BRy = CY + R + GAP;
+
+  const lifeOk = ok(life, 500);
+
+  function card(x, y, w, h, headerBg, titleColor, iconSvg, title, subtitle, rows) {
     return `
-    <text x="${rx}" y="${ry+5}" font-size="${13*S}" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">${emoji}</text>
-    <text x="${rx+26*S}" y="${ry+5}" font-size="${11*S}" fill="#374151" font-family="Arial,sans-serif">${label}</text>
-    <rect x="${rx+192*S}" y="${ry-13*S}" width="${88*S}" height="${19*S}" rx="${9*S}" fill="${p.bg}"/>
-    <text x="${rx+236*S}" y="${ry+2}" font-size="${9.5*S}" fill="${p.color}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${p.text}</text>`;
+    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="30" fill="white" opacity="0.95"/>
+    <rect x="${x}" y="${y}" width="${w}" height="${Math.min(110,h)}" rx="30" fill="${headerBg}"/>
+    <rect x="${x}" y="${y+80}" width="${w}" height="30" fill="${headerBg}"/>
+    ${iconSvg(x+28, y+32)}
+    <text x="${x+130}" y="${y+58}" font-size="42" fill="${titleColor}" font-weight="bold" font-family="Arial,sans-serif">${title}</text>
+    <text x="${x+130}" y="${y+82}" font-size="22" fill="${titleColor}" opacity="0.65" font-family="Arial,sans-serif">${subtitle}</text>
+    <line x1="${x+20}" y1="${y+112}" x2="${x+w-20}" y2="${y+112}" stroke="#f0f0f0" stroke-width="2"/>
+    ${rows(x, y)}`;
   }
 
-  const lifeOk = Number(life) >= 500;
+  // Icon SVGs (simple flat style)
+  const hospitalIcon = (x, y) => `<rect x="${x}" y="${y-20}" width="72" height="72" rx="16" fill="#dbeafe"/>
+    <text x="${x+36}" y="${y+36}" font-size="40" text-anchor="middle" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">🏥</text>`;
+  const bandageIcon = (x, y) => `<rect x="${x}" y="${y-20}" width="72" height="72" rx="16" fill="#ffe4e6"/>
+    <text x="${x+36}" y="${y+36}" font-size="40" text-anchor="middle" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">🩹</text>`;
+  const ribbonIcon = (x, y) => `<rect x="${x}" y="${y-20}" width="72" height="72" rx="16" fill="#ede9fe"/>
+    <text x="${x+36}" y="${y+36}" font-size="40" text-anchor="middle" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">🎗️</text>`;
+  const boltIcon = (x, y) => `<rect x="${x}" y="${y-20}" width="72" height="72" rx="16" fill="#ffedd5"/>
+    <text x="${x+36}" y="${y+36}" font-size="40" text-anchor="middle" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">⚡</text>`;
 
-  // Card positions (in logical coords, will be scaled)
-  const TL = {x:18, y:18, w:390, h:320};
-  const TR = {x:492, y:18, w:390, h:320};
-  const BL = {x:18, y:610, w:390, h:320};
-  const BR = {x:492, y:610, w:390, h:320};
-  const CY = 470; // center Y
-
-  function card(c, titleEmoji, title, subtitle, titleColor, headerBg, rows) {
-    const x=c.x*S, y=c.y*S, w=c.w*S, h=c.h*S, r=18*S;
-    return `
-    <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="white" filter="url(#sh)"/>
-    <clipPath id="clip${title}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}"/></clipPath>
-    <rect x="${x}" y="${y}" width="${w}" height="${58*S}" fill="${headerBg}" clip-path="url(#clip${title})"/>
-    <text x="${x+16*S}" y="${y+36*S}" font-size="${22*S}" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">${titleEmoji}</text>
-    <text x="${x+56*S}" y="${y+37*S}" font-size="${20*S}" fill="${titleColor}" font-weight="bold" font-family="Arial,sans-serif">${title}</text>
-    <text x="${x+56*S}" y="${y+52*S}" font-size="${10*S}" fill="${titleColor}" opacity="0.6" font-family="Arial,sans-serif">${subtitle}</text>
-    ${rows}`;
-  }
+  const pillX_TL = TLx + CARD_W - 240;
+  const pillX_TR = TRx + CARD_W - 240;
+  const pillX_BL = BLx + CARD_W - 240;
+  const pillX_BR = BRx + CARD_W - 240;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#f0f0ff"/>
+      <stop offset="0%" stop-color="#eef2ff"/>
       <stop offset="100%" stop-color="#fdf2f8"/>
     </linearGradient>
     <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#a78bfa"/>
       <stop offset="100%" stop-color="#ec4899"/>
     </linearGradient>
-    <filter id="sh" x="-5%" y="-5%" width="110%" height="110%">
-      <feDropShadow dx="0" dy="${2*S}" stdDeviation="${8*S}" flood-color="#00000012"/>
+    <filter id="sh">
+      <feDropShadow dx="0" dy="4" stdDeviation="16" flood-color="#0000001a"/>
     </filter>
   </defs>
 
   <rect width="${W}" height="${H}" fill="url(#bg)"/>
 
-  <!-- TL 小疾病 -->
-  ${card(TL,'🏥','小疾病','住院相關保障','#1d4ed8','#eff6ff',`
-    ${row(TL.x+18, TL.y+85, '🛏️', '住院日額（實支+定額）', pill(daily,3000,'元/天'))}
-    ${row(TL.x+18, TL.y+120, '✂️', '手術（實支實付）', pill(surgeryFixed,50000,'元'))}
-    ${row(TL.x+18, TL.y+155, '🔪', '手術（定額手術）', pill(surgeryFixed,50000,'元'))}
-    ${row(TL.x+18, TL.y+190, '💊', '雜費', pill(inpatient,100000,'元'))}
+  <!-- TL: 小疾病 -->
+  ${card(TLx, TLy, CARD_W, CARD_H, '#eff6ff', '#1d4ed8', hospitalIcon, '小疾病', '住院相關保障', (x,y) => `
+    ${rowSVG(x+28, y+160, '住院日額（實支+定額）', pillX_TL, (px,py) => pillSVG(px,py,daily,3000,'元/天'))}
+    ${rowSVG(x+28, y+210, '手術（實支實付）', pillX_TL, (px,py) => pillSVG(px,py,surgeryFixed,50000,'元'))}
+    ${rowSVG(x+28, y+260, '手術（定額手術）', pillX_TL, (px,py) => pillSVG(px,py,surgeryFixed,50000,'元'))}
+    ${rowSVG(x+28, y+310, '雜費', pillX_TL, (px,py) => pillSVG(px,py,inpatient,100000,'元'))}
   `)}
 
-  <!-- TR 小意外 -->
-  ${card(TR,'🩹','小意外','意外相關保障','#be123c','#fff1f2',`
-    ${row(TR.x+18, TR.y+85, '🚑', '意外門診', pill(accident,10000,'元'))}
-    ${row(TR.x+18, TR.y+120, '🦴', '骨折未住院', pill(fracture,30000,'元'))}
-    ${row(TR.x+18, TR.y+155, '🛏️', '意外住院日額', pillB(Number(daily)>0))}
+  <!-- TR: 小意外 -->
+  ${card(TRx, TRy, CARD_W, CARD_H, '#fff1f2', '#be123c', bandageIcon, '小意外', '意外相關保障', (x,y) => `
+    ${rowSVG(x+28, y+160, '意外門診', pillX_TR, (px,py) => pillSVG(px,py,accident,10000,'元'))}
+    ${rowSVG(x+28, y+210, '骨折未住院', pillX_TR, (px,py) => pillSVG(px,py,fracture,30000,'元'))}
+    ${rowSVG(x+28, y+260, '意外住院日額', pillX_TR, (px,py) => pillBoolSVG(px,py,Number(daily)>0))}
   `)}
 
-  <!-- BL 大疾病 -->
-  ${card(BL,'🎗️','大疾病','重大疾病保障','#6d28d9','#f5f3ff',`
-    ${row(BL.x+18, BL.y+85, '💓', '重大傷病', pill(critical,100,'萬'))}
-    ${row(BL.x+18, BL.y+120, '🛡️', '重大疾病', pill(critical,100,'萬'))}
-    ${row(BL.x+18, BL.y+155, '🎗️', '癌症一次金', pill(cancer,100,'萬'))}
-    ${row(BL.x+18, BL.y+190, '💉', '化療/放療/癌症住院', pill(0,1,'萬'))}
-    ${row(BL.x+18, BL.y+225, '👴', '長照月給付', pill(ltc,30000,'元/月'))}
+  <!-- BL: 大疾病 -->
+  ${card(BLx, BLy, CARD_W, CARD_H, '#f5f3ff', '#6d28d9', ribbonIcon, '大疾病', '重大疾病保障', (x,y) => `
+    ${rowSVG(x+28, y+160, '重大傷病', pillX_BL, (px,py) => pillSVG(px,py,critical,100,'萬'))}
+    ${rowSVG(x+28, y+210, '重大疾病', pillX_BL, (px,py) => pillSVG(px,py,critical,100,'萬'))}
+    ${rowSVG(x+28, y+260, '癌症一次金', pillX_BL, (px,py) => pillSVG(px,py,cancer,100,'萬'))}
+    ${rowSVG(x+28, y+310, '化療/放療', pillX_BL, (px,py) => pillSVG(px,py,0,1,'萬'))}
+    ${rowSVG(x+28, y+360, '癌症住院', pillX_BL, (px,py) => pillSVG(px,py,0,3000,'元/日'))}
+    ${rowSVG(x+28, y+410, '長照月給付', pillX_BL, (px,py) => pillSVG(px,py,ltc,30000,'元/月'))}
   `)}
 
-  <!-- BR 大意外 -->
-  ${card(BR,'⚡','大意外','意外相關保障','#c2410c','#fff7ed',`
-    ${row(BR.x+18, BR.y+85, '🏃', '意外身故', pill(accDeath,500,'萬'))}
-    ${row(BR.x+18, BR.y+120, '♿', '殘廢（1-11級）', pill(disability,500,'萬'))}
-    ${row(BR.x+18, BR.y+155, '🤝', '全殘', pill(disability,500,'萬'))}
+  <!-- BR: 大意外 -->
+  ${card(BRx, BRy, CARD_W, CARD_H, '#fff7ed', '#c2410c', boltIcon, '大意外', '意外相關保障', (x,y) => `
+    ${rowSVG(x+28, y+160, '意外身故', pillX_BR, (px,py) => pillSVG(px,py,accDeath,500,'萬'))}
+    ${rowSVG(x+28, y+210, '殘廢（1-11級）', pillX_BR, (px,py) => pillSVG(px,py,disability,500,'萬'))}
+    ${rowSVG(x+28, y+260, '全殘', pillX_BR, (px,py) => pillSVG(px,py,disability,500,'萬'))}
   `)}
 
-  <!-- Cross lines -->
-  <line x1="${450*S}" y1="${18*S}" x2="${450*S}" y2="${350*S}" stroke="#d1d5db" stroke-width="${2*S}" stroke-dasharray="${8*S},${5*S}"/>
-  <line x1="${450*S}" y1="${590*S}" x2="${450*S}" y2="${930*S}" stroke="#d1d5db" stroke-width="${2*S}" stroke-dasharray="${8*S},${5*S}"/>
-  <line x1="${18*S}" y1="${CY*S}" x2="${358*S}" y2="${CY*S}" stroke="#d1d5db" stroke-width="${2*S}" stroke-dasharray="${8*S},${5*S}"/>
-  <line x1="${542*S}" y1="${CY*S}" x2="${882*S}" y2="${CY*S}" stroke="#d1d5db" stroke-width="${2*S}" stroke-dasharray="${8*S},${5*S}"/>
+  <!-- Cross dashed lines -->
+  <line x1="${CX}" y1="${20}" x2="${CX}" y2="${CY-R-GAP}" stroke="#d1d5db" stroke-width="3" stroke-dasharray="12,8"/>
+  <line x1="${CX}" y1="${CY+R+GAP}" x2="${CX}" y2="${H-20}" stroke="#d1d5db" stroke-width="3" stroke-dasharray="12,8"/>
+  <line x1="${20}" y1="${CY}" x2="${CX-R-GAP}" y2="${CY}" stroke="#d1d5db" stroke-width="3" stroke-dasharray="12,8"/>
+  <line x1="${CX+R+GAP}" y1="${CY}" x2="${W-20}" y2="${CY}" stroke="#d1d5db" stroke-width="3" stroke-dasharray="12,8"/>
 
-  <!-- Center life insurance circle -->
-  <circle cx="${450*S}" cy="${CY*S}" r="${118*S}" fill="white" filter="url(#sh)"/>
-  <circle cx="${450*S}" cy="${CY*S}" r="${110*S}" fill="white"/>
-  <circle cx="${450*S}" cy="${CY*S}" r="${110*S}" fill="none" stroke="url(#ring)" stroke-width="${6*S}"/>
-  <text x="${450*S}" y="${(CY-32)*S}" font-size="${38*S}" text-anchor="middle" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">🛡️</text>
-  <text x="${450*S}" y="${(CY+8)*S}" font-size="${18*S}" fill="#7c3aed" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">壽險保額</text>
-  <text x="${450*S}" y="${(CY+32)*S}" font-size="${life?22*S:16*S}" fill="${lifeOk?'#065f46':'#dc2626'}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${life ? life+'萬' : '⚠️ 未投保'}</text>
-  ${!lifeOk ? `<text x="${450*S}" y="${(CY+52)*S}" font-size="${10*S}" fill="#dc2626" text-anchor="middle" font-family="Arial,sans-serif">建議500萬以上</text>` : `<text x="${450*S}" y="${(CY+52)*S}" font-size="${10*S}" fill="#065f46" text-anchor="middle" font-family="Arial,sans-serif">✓ 保額充足</text>`}
+  <!-- Center Life Circle -->
+  <circle cx="${CX}" cy="${CY}" r="${R+10}" fill="white" filter="url(#sh)"/>
+  <circle cx="${CX}" cy="${CY}" r="${R+4}" fill="white"/>
+  <circle cx="${CX}" cy="${CY}" r="${R+4}" fill="none" stroke="url(#ring)" stroke-width="10"/>
+  
+  <!-- Shield SVG icon in center -->
+  <text x="${CX}" y="${CY-40}" font-size="70" text-anchor="middle" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">🛡️</text>
+  <text x="${CX}" y="${CY+20}" font-size="38" fill="#7c3aed" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">壽險</text>
+  <text x="${CX}" y="${CY+60}" font-size="${Number(life)>999?'28':'34'}" fill="${lifeOk?'#065f46':'#dc2626'}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${life?life+'萬':'未投保'}</text>
+  ${!lifeOk?`<text x="${CX}" y="${CY+90}" font-size="18" fill="#dc2626" text-anchor="middle" font-family="Arial,sans-serif">⚠️ 建議500萬以上</text>`:`<text x="${CX}" y="${CY+90}" font-size="18" fill="#065f46" text-anchor="middle" font-family="Arial,sans-serif">✓ 保額充足</text>`}
 
   <!-- Footer -->
-  <text x="${450*S}" y="${920*S}" font-size="${13*S}" fill="#7c3aed" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">安心守護・全面保障</text>
-  <text x="${450*S}" y="${936*S}" font-size="${10*S}" fill="#94a3b8" text-anchor="middle" font-family="Arial,sans-serif">${name} · 保寶險保障分析報告</text>
+  <circle cx="${CX-120}" cy="${H-60}" r="22" fill="#ede9fe"/>
+  <text x="${CX-120}" y="${H-52}" font-size="22" text-anchor="middle" font-family="Apple Color Emoji,Segoe UI Emoji,sans-serif">🛡️</text>
+  <text x="${CX+10}" y="${H-50}" font-size="28" fill="#7c3aed" font-weight="bold" font-family="Arial,sans-serif">安心守護・全面保障</text>
+  <text x="${CX}" y="${H-22}" font-size="22" fill="#94a3b8" text-anchor="middle" font-family="Arial,sans-serif">${name}・保寶險保障分析報告</text>
 </svg>`;
 }
 
