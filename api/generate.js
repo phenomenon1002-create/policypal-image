@@ -1,46 +1,9 @@
 const https = require('https');
-const http = require('http');
 const crypto = require('crypto');
 
 const CLOUD_NAME = 'dsicpafgz';
 const API_KEY = '989282614168298';
 const API_SECRET = 'hyP7yp3zKmfkj-g--cdQLTZr9iw';
-
-async function uploadToCloudinary(b64, resourceType='image', format='png') {
-  return new Promise((resolve, reject) => {
-    const timestamp = Math.floor(Date.now() / 1000);
-    const paramStr = `format=${format}&timestamp=${timestamp}`;
-    const sig = crypto.createHash('sha1').update(paramStr + API_SECRET).digest('hex');
-    const boundary = 'Boundary' + Date.now();
-    const parts = [
-      `--${boundary}\r\nContent-Disposition: form-data; name="file"\r\n\r\ndata:image/png;base64,${b64}`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="format"\r\n\r\n${format}`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="api_key"\r\n\r\n${API_KEY}`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="timestamp"\r\n\r\n${timestamp}`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="signature"\r\n\r\n${sig}`,
-      `--${boundary}--`
-    ];
-    const body = parts.join('\r\n');
-    const req = https.request({
-      hostname: 'api.cloudinary.com',
-      path: `/v1_1/${CLOUD_NAME}/image/upload`,
-      method: 'POST',
-      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': Buffer.byteLength(body) }
-    }, res => {
-      let d = ''; res.on('data', c => d += c);
-      res.on('end', () => {
-        try {
-          const result = JSON.parse(d);
-          console.log('Cloudinary result:', JSON.stringify(result).slice(0,200));
-          if (result.secure_url) resolve(result.secure_url);
-          else reject(new Error(JSON.stringify(result)));
-        } catch(e) { reject(new Error(d)); }
-      });
-    });
-    req.on('error', reject);
-    req.write(body); req.end();
-  });
-}
 
 function generateSVG(data) {
   const { name, age, daily=0, surgeryFixed=0, inpatient=0, fracture=0, accident=0, accDeath=0, disability=0, critical=0, cancer=0, ltc=0, life=0 } = data;
@@ -50,89 +13,113 @@ function generateSVG(data) {
     const color = ok ? '#15803d' : '#dc2626';
     const bg = ok ? '#dcfce7' : '#fee2e2';
     const icon = ok ? '✓' : '!';
-    return { color, bg, text: `${icon} ${Number(v).toLocaleString()} ${unit}` };
+    return `<rect x="BGRX" y="BGRY" width="82" height="17" rx="8" fill="${bg}"/>
+    <text x="TXTX" y="TXTY" font-size="9.5" fill="${color}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${icon} ${Number(v).toLocaleString()} ${unit}</text>`;
   }
   function tagB(has) {
-    return { color: has?'#15803d':'#dc2626', bg: has?'#dcfce7':'#fee2e2', text: has?'✓ 已投保':'! 未投保' };
+    const color = has ? '#15803d' : '#dc2626';
+    const bg = has ? '#dcfce7' : '#fee2e2';
+    const txt = has ? '✓ 已投保' : '! 未投保';
+    return `<rect x="BGRX" y="BGRY" width="82" height="17" rx="8" fill="${bg}"/>
+    <text x="TXTX" y="TXTY" font-size="9.5" fill="${color}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${txt}</text>`;
   }
 
-  function rowSVG(x, y, label, t) {
-    return `<text x="${x+8}" y="${y}" font-size="10.5" fill="#64748b" font-family="Arial">${label}</text>
-    <rect x="${x+108}" y="${y-12}" width="78" height="16" rx="8" fill="${t.bg}"/>
-    <text x="${x+147}" y="${y}" font-size="9.5" fill="${t.color}" text-anchor="middle" font-weight="bold" font-family="Arial">${t.text}</text>`;
+  // Each quadrant is 250x200, center gap 80 for life circle
+  // Layout: 580x580 total
+  // Top-left: 0,0 to 250,250
+  // Top-right: 330,0 to 580,250
+  // Bottom-left: 0,330 to 250,580
+  // Bottom-right: 330,330 to 580,580
+  // Center: 250,250 to 330,330 (life circle)
+
+  function makeTag(t, bx, by) {
+    return t.replace('BGRX', bx).replace('BGRY', by)
+            .replace('TXTX', bx+41).replace('TXTY', by+12);
+  }
+
+  function qRow(label, tagStr, qx, y) {
+    const tagX = qx + 130;
+    const t = makeTag(tagStr, tagX, y-13);
+    return `<text x="${qx+8}" y="${y}" font-size="10.5" fill="#475569" font-family="Arial,sans-serif">${label}</text>${t}`;
+  }
+  function qRowB(label, tagStr, qx, y) {
+    return qRow(label, tagStr, qx, y);
   }
 
   const lifeOk = Number(life) >= 500;
-  const q = [
-    { title: '🏥 小疾病', color: '#0369a1', x: 10, y: 250, rows: [
-      rowSVG(10, 300, '住院日額', tag(daily, 3000, '元/天')),
-      rowSVG(10, 320, '定額手術', tag(surgeryFixed, 50000, '元')),
-      rowSVG(10, 340, '實支雜費', tag(inpatient, 100000, '元')),
-      rowSVG(10, 360, '實支手術', tag(inpatient, 50000, '元')),
-    ]},
-    { title: '🩹 小意外', color: '#9d174d', x: 315, y: 250, rows: [
-      rowSVG(315, 300, '骨折未住院', tag(fracture, 30000, '元')),
-      rowSVG(315, 320, '意外門診', tag(accident, 10000, '元')),
-      rowSVG(315, 340, '意外住院日額', tagB(Number(daily) > 0)),
-    ]},
-    { title: '🎗️ 大疾病', color: '#7c3aed', x: 10, y: 385, rows: [
-      rowSVG(10, 435, '重大疾病/傷病', tag(critical, 100, '萬')),
-      rowSVG(10, 455, '癌症一次金', tag(cancer, 100, '萬')),
-      rowSVG(10, 475, '長照月給付', tag(ltc, 30000, '元/月')),
-    ]},
-    { title: '⚡ 大意外', color: '#b45309', x: 315, y: 385, rows: [
-      rowSVG(315, 435, '意外身故', tag(accDeath, 500, '萬')),
-      rowSVG(315, 455, '殘廢/全殘', tag(disability, 500, '萬')),
-      rowSVG(315, 475, '失能扶助金', tagB(Number(disability) > 0)),
-    ]},
-  ];
+  const lifeColor = lifeOk ? '#15803d' : '#dc2626';
+  const lifeBg = lifeOk ? '#dcfce7' : '#fee2e2';
+
+  // Quadrant positions
+  const TL = { x: 10, y: 10 };
+  const TR = { x: 320, y: 10 };
+  const BL = { x: 10, y: 320 };
+  const BR = { x: 320, y: 320 };
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="620" height="530" xmlns="http://www.w3.org/2000/svg">
+<svg width="600" height="600" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="hg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#3b0764"/>
-      <stop offset="50%" style="stop-color:#7c3aed"/>
-      <stop offset="100%" style="stop-color:#db2777"/>
-    </linearGradient>
     <linearGradient id="rg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#7c3aed"/>
       <stop offset="100%" style="stop-color:#db2877"/>
     </linearGradient>
   </defs>
-  <rect width="620" height="530" fill="#f5f0ff"/>
 
-  <!-- Header -->
-  <rect x="10" y="8" width="600" height="105" rx="16" fill="url(#hg)"/>
-  <text x="310" y="38" font-size="17" fill="white" text-anchor="middle" font-weight="bold" font-family="Arial">醫療雙十字保障分析</text>
-  <text x="310" y="57" font-size="11" fill="rgba(255,255,255,0.75)" text-anchor="middle" font-family="Arial">保寶險 AI 夥伴・保障更聰明</text>
-  <rect x="20" y="68" width="180" height="36" rx="8" fill="rgba(255,255,255,0.18)"/>
-  <text x="30" y="82" font-size="9.5" fill="rgba(255,255,255,0.65)" font-family="Arial">客戶姓名</text>
-  <text x="30" y="97" font-size="13" fill="white" font-weight="bold" font-family="Arial">${name}</text>
-  <rect x="215" y="68" width="180" height="36" rx="8" fill="rgba(255,255,255,0.18)"/>
-  <text x="225" y="82" font-size="9.5" fill="rgba(255,255,255,0.65)" font-family="Arial">年齡</text>
-  <text x="225" y="97" font-size="13" fill="white" font-weight="bold" font-family="Arial">${age}</text>
+  <!-- Background -->
+  <rect width="600" height="600" fill="#f5f0ff"/>
 
-  <!-- Life Insurance -->
-  <rect x="10" y="122" width="600" height="118" rx="16" fill="white"/>
-  <text x="310" y="145" font-size="12" fill="#7c3aed" text-anchor="middle" font-weight="bold" font-family="Arial">💜 壽險保額（核心保障）</text>
-  <circle cx="310" cy="200" r="40" fill="url(#rg)"/>
-  <circle cx="310" cy="200" r="32" fill="white"/>
-  <text x="310" y="196" font-size="${Number(life)>999?'13':'17'}" fill="#7c3aed" text-anchor="middle" font-weight="bold" font-family="Arial">${life||'⚠️'}</text>
-  <text x="310" y="210" font-size="9.5" fill="#94a3b8" text-anchor="middle" font-family="Arial">${life?'萬':'未投保'}</text>
-  <rect x="250" y="225" width="120" height="22" rx="11" fill="${lifeOk?'#dcfce7':'#fee2e2'}"/>
-  <text x="310" y="240" font-size="10.5" fill="${lifeOk?'#15803d':'#dc2626'}" text-anchor="middle" font-weight="bold" font-family="Arial">${lifeOk?'✓ 保額充足':'⚠️ 建議500萬以上'}</text>
+  <!-- Cross lines -->
+  <line x1="300" y1="10" x2="300" y2="590" stroke="#e2d9f3" stroke-width="2"/>
+  <line x1="10" y1="300" x2="590" y2="300" stroke="#e2d9f3" stroke-width="2"/>
 
-  <!-- 4 Quadrants -->
-  ${q.map(card => `
-  <rect x="${card.x}" y="${card.y}" width="295" height="130" rx="14" fill="white"/>
-  <text x="${card.x+14}" y="${card.y+25}" font-size="12.5" fill="${card.color}" font-weight="bold" font-family="Arial">${card.title}</text>
-  <line x1="${card.x+6}" y1="${card.y+32}" x2="${card.x+289}" y2="${card.y+32}" stroke="#f1f5f9" stroke-width="1.5"/>
-  ${card.rows.join('\n')}
-  `).join('')}
+  <!-- TL: 小疾病 -->
+  <rect x="${TL.x}" y="${TL.y}" width="275" height="275" rx="16" fill="white" opacity="0.95"/>
+  <text x="${TL.x+14}" y="${TL.y+28}" font-size="13" fill="#0369a1" font-weight="bold" font-family="Arial,sans-serif">🏥 小疾病</text>
+  <line x1="${TL.x+8}" y1="${TL.y+36}" x2="${TL.x+267}" y2="${TL.y+36}" stroke="#e0f2fe" stroke-width="1.5"/>
+  ${qRow('住院日額', tag(daily, 3000, '元/天'), TL.x, TL.y+65)}
+  ${qRow('定額手術', tag(surgeryFixed, 50000, '元'), TL.x, TL.y+95)}
+  ${qRow('實支雜費', tag(inpatient, 100000, '元'), TL.x, TL.y+125)}
+  ${qRow('實支手術', tag(inpatient, 50000, '元'), TL.x, TL.y+155)}
 
-  <!-- Footer -->
-  <text x="310" y="525" font-size="9" fill="#94a3b8" text-anchor="middle" font-family="Arial">本報告僅供參考，實際保障依保單條款為準</text>
+  <!-- TR: 小意外 -->
+  <rect x="${TR.x}" y="${TR.y}" width="275" height="275" rx="16" fill="white" opacity="0.95"/>
+  <text x="${TR.x+14}" y="${TR.y+28}" font-size="13" fill="#9d174d" font-weight="bold" font-family="Arial,sans-serif">🩹 小意外</text>
+  <line x1="${TR.x+8}" y1="${TR.y+36}" x2="${TR.x+267}" y2="${TR.y+36}" stroke="#fce7f3" stroke-width="1.5"/>
+  ${qRow('骨折未住院', tag(fracture, 30000, '元'), TR.x, TR.y+65)}
+  ${qRow('意外門診', tag(accident, 10000, '元'), TR.x, TR.y+95)}
+  ${qRowB('意外住院日額', tagB(Number(daily)>0), TR.x, TR.y+125)}
+
+  <!-- BL: 大疾病 -->
+  <rect x="${BL.x}" y="${BL.y}" width="275" height="275" rx="16" fill="white" opacity="0.95"/>
+  <text x="${BL.x+14}" y="${BL.y+28}" font-size="13" fill="#7c3aed" font-weight="bold" font-family="Arial,sans-serif">🎗️ 大疾病</text>
+  <line x1="${BL.x+8}" y1="${BL.y+36}" x2="${BL.x+267}" y2="${BL.y+36}" stroke="#ede9fe" stroke-width="1.5"/>
+  ${qRow('重大疾病/傷病', tag(critical, 100, '萬'), BL.x, BL.y+65)}
+  ${qRow('癌症一次金', tag(cancer, 100, '萬'), BL.x, BL.y+95)}
+  ${qRow('長照月給付', tag(ltc, 30000, '元/月'), BL.x, BL.y+125)}
+
+  <!-- BR: 大意外 -->
+  <rect x="${BR.x}" y="${BR.y}" width="275" height="275" rx="16" fill="white" opacity="0.95"/>
+  <text x="${BR.x+14}" y="${BR.y+28}" font-size="13" fill="#b45309" font-weight="bold" font-family="Arial,sans-serif">⚡ 大意外</text>
+  <line x1="${BR.x+8}" y1="${BR.y+36}" x2="${BR.x+267}" y2="${BR.y+36}" stroke="#fef3c7" stroke-width="1.5"/>
+  ${qRow('意外身故', tag(accDeath, 500, '萬'), BR.x, BR.y+65)}
+  ${qRow('殘廢/全殘', tag(disability, 500, '萬'), BR.x, BR.y+95)}
+  ${qRowB('失能扶助金', tagB(Number(disability)>0), BR.x, BR.y+125)}
+
+  <!-- Center: 壽險 -->
+  <circle cx="300" cy="300" r="68" fill="url(#rg)" opacity="0.95"/>
+  <circle cx="300" cy="300" r="56" fill="white"/>
+  <text x="300" y="285" font-size="10" fill="#7c3aed" text-anchor="middle" font-family="Arial,sans-serif" font-weight="bold">💜 壽險</text>
+  <text x="300" y="305" font-size="${Number(life)>999?'14':'18'}" fill="#7c3aed" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${life||'⚠️'}</text>
+  <text x="300" y="320" font-size="10" fill="#94a3b8" text-anchor="middle" font-family="Arial,sans-serif">${life?'萬':'未投保'}</text>
+
+  <!-- Labels: 四角方向 -->
+  <text x="148" y="5" font-size="11" fill="#94a3b8" text-anchor="middle" font-family="Arial,sans-serif">疾病</text>
+  <text x="452" y="5" font-size="11" fill="#94a3b8" text-anchor="middle" font-family="Arial,sans-serif">意外</text>
+  <text x="5" y="155" font-size="11" fill="#94a3b8" text-anchor="middle" font-family="Arial,sans-serif" transform="rotate(-90,5,155)">小</text>
+  <text x="5" y="455" font-size="11" fill="#94a3b8" text-anchor="middle" font-family="Arial,sans-serif" transform="rotate(-90,5,455)">大</text>
+
+  <!-- Client name -->
+  <text x="300" y="592" font-size="10" fill="#94a3b8" text-anchor="middle" font-family="Arial,sans-serif">${name} · 保寶險保障分析</text>
 </svg>`;
 }
 
@@ -145,16 +132,12 @@ module.exports = async (req, res) => {
 
   try {
     const data = req.body;
-    console.log('Generating for:', data.name);
     const svg = generateSVG(data);
-    
-    // Convert SVG to PNG using Cloudinary's built-in conversion
     const svgB64 = Buffer.from(svg).toString('base64');
-    const boundary = 'Boundary' + Date.now();
+    const boundary = 'B' + Date.now();
     const timestamp = Math.floor(Date.now() / 1000);
-    const paramStr = `format=png&timestamp=${timestamp}`;
-    const sig = crypto.createHash('sha1').update(paramStr + API_SECRET).digest('hex');
-    
+    const sig = crypto.createHash('sha1').update(`format=png&timestamp=${timestamp}${API_SECRET}`).digest('hex');
+
     const uploadBody = [
       `--${boundary}\r\nContent-Disposition: form-data; name="file"\r\n\r\ndata:image/svg+xml;base64,${svgB64}`,
       `--${boundary}\r\nContent-Disposition: form-data; name="format"\r\n\r\npng`,
@@ -165,30 +148,25 @@ module.exports = async (req, res) => {
     ].join('\r\n');
 
     const url = await new Promise((resolve, reject) => {
-      const req2 = https.request({
+      const r = https.request({
         hostname: 'api.cloudinary.com',
         path: `/v1_1/${CLOUD_NAME}/image/upload`,
         method: 'POST',
         headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': Buffer.byteLength(uploadBody) }
-      }, r => {
-        let d = ''; r.on('data', c => d += c);
-        r.on('end', () => {
+      }, res2 => {
+        let d = ''; res2.on('data', c => d += c);
+        res2.on('end', () => {
           try {
             const result = JSON.parse(d);
-            console.log('Upload result:', d.slice(0,300));
-            if (result.secure_url) {
-              // Force PNG format in URL
-              const pngUrl = result.secure_url.replace(/\.[^.]+$/, '.png');
-              resolve(pngUrl);
-            } else reject(new Error(d));
+            if (result.secure_url) resolve(result.secure_url.replace(/\.[^.]+$/, '.png'));
+            else reject(new Error(d));
           } catch(e) { reject(new Error(d)); }
         });
       });
-      req2.on('error', reject);
-      req2.write(uploadBody); req2.end();
+      r.on('error', reject);
+      r.write(uploadBody); r.end();
     });
 
-    console.log('Generated URL:', url);
     res.json({ url });
   } catch(e) {
     console.error('Error:', e.message);
