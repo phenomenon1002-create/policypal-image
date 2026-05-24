@@ -123,7 +123,7 @@ def generate_image(data):
 
     # Layout
     CX, CY = 800, 830
-    R = 160
+    R = 200
     G = 12
     TLW = CX - R - G
     TRW = W - CX - R - G
@@ -260,32 +260,21 @@ def generate_image(data):
     )
 
     # Center circle
-    from PIL import ImageFilter
     circle_img = Image.new('RGBA', (W, H), (0,0,0,0))
     circle_draw = ImageDraw.Draw(circle_img)
-    circle_draw.ellipse([CX-R-16, CY-R-16, CX+R+16, CY+R+16], fill=(180,140,255,60))
-    circle_draw.ellipse([CX-R-8, CY-R-8, CX+R+8, CY+R+8], fill=(255,255,255,255), outline=(139,92,246), width=8)
+    circle_draw.ellipse([CX-R-20, CY-R-20, CX+R+20, CY+R+20], fill=(220,200,255,80))
+    circle_draw.ellipse([CX-R-8, CY-R-8, CX+R+8, CY+R+8], fill=(255,255,255,255), outline=(139,92,246), width=12)
     img = Image.alpha_composite(img.convert('RGBA'), circle_img).convert('RGB')
     draw = ImageDraw.Draw(img)
 
-    # Center circle content
-    # Shield icon area
-    draw_rounded_rect(draw, [CX-40, CY-R+20, CX+40, CY-R+90], 16, fill=PURPLE_LIGHT, outline=PURPLE_MID, width=2)
-    draw.text((CX, CY-R+55), '✓', font=f_xl, fill=PURPLE, anchor='mm')
-    
-    # 壽險 title
-    draw.text((CX, CY-40), '壽險保額', font=f_md, fill=PURPLE, anchor='mm')
-    
-    # Life amount
+    # Center circle - 壽險保額
+    draw.text((CX, CY-80), '壽險保額', font=f_lg, fill=PURPLE, anchor='mm')
     life_text = f"{int(life)}萬" if life > 0 else '未投保'
     life_color = GREEN if life >= 500 else DARK_RED
-    draw.text((CX, CY+14), life_text, font=f_xxl, fill=life_color, anchor='mm')
-    
-    # Status
-    if life < 500:
-        draw.text((CX, CY+66), '建議500萬以上', font=f_xs, fill=DARK_RED, anchor='mm')
-    else:
-        draw.text((CX, CY+66), '✓ 保額充足', font=f_xs, fill=GREEN, anchor='mm')
+    draw.text((CX, CY), life_text, font=f_xxl, fill=life_color, anchor='mm')
+    status = '✓ 保額充足' if life >= 500 else '建議500萬以上'
+    status_color = GREEN if life >= 500 else DARK_RED
+    draw.text((CX, CY+80), status, font=f_md, fill=status_color, anchor='mm')
 
     # Suggestions section
     issues = []
