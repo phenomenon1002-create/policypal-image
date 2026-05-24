@@ -1,169 +1,249 @@
-const https = require('https');
-const crypto = require('crypto');
+import json, base64, hashlib, time, urllib.request, io
+from PIL import Image, ImageDraw, ImageFont
 
-const CLOUD_NAME = 'dsicpafgz';
-const API_KEY = '989282614168298';
-const API_SECRET = 'hyP7yp3zKmfkj-g--cdQLTZr9iw';
+FONT_REG  = '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'
+FONT_MED  = '/usr/share/fonts/opentype/noto/NotoSansCJK-Medium.ttc'
+FONT_BOLD = '/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc'
 
-function generateSVG(data) {
-  const { name='', daily=0, surgeryFixed=0, inpatient=0, fracture=0, accident=0, accDeath=0, disability=0, critical=0, cancer=0, ltc=0, life=0 } = data;
+WHITE        = (255, 255, 255)
+BG           = (248, 249, 250)
+DARK         = (33,  37,  41)
+GRAY         = (108, 117, 125)
+PURPLE_GRAD  = (82,  51,  168)
+PURPLE_END   = (122, 79,  240)
+PURPLE       = (106, 44,  255)
+PURPLE_LIGHT = (243, 230, 255)
+PURPLE_MID   = (187, 153, 255)
+BLUE         = (26,  92,  255)
+BLUE_LIGHT   = (240, 244, 255)
+BLUE_BORDER  = (143, 175, 255)
+RED          = (227, 38,  38)
+RED_LIGHT    = (255, 235, 235)
+RED_BORDER   = (255, 143, 143)
+ORANGE       = (230, 115,   0)
+ORANGE_LIGHT = (255, 244, 230)
+ORANGE_BORDER= (255, 184, 102)
+GREEN        = (22,  140,  60)
+GREEN_BG     = (225, 245, 230)
+DARK_RED     = (185,  28,  28)
+RED_BG       = (254, 226, 226)
 
-  const W = 1600, H = 1680;
-  const CX = 800, CY = 820;
-  const R = 155;
-  const G = 10;
+def load_fonts():
+    sizes = {'xs':22,'sm':26,'md':30,'lg':36,'xxl':52,'title':48}
+    fonts = {}
+    for name, sz in sizes.items():
+        try:
+            fonts[name]      = ImageFont.truetype(FONT_REG,  sz)
+            fonts[name+'_m'] = ImageFont.truetype(FONT_MED,  sz)
+            fonts[name+'_b'] = ImageFont.truetype(FONT_BOLD, sz)
+        except Exception:
+            fb = ImageFont.load_default()
+            fonts[name] = fonts[name+'_m'] = fonts[name+'_b'] = fb
+    return fonts
 
-  const TLW = CX - R - G;
-  const TLH = CY - R - G;
-  const TRW = W - CX - R - G;
-  const BLH = H - CY - R - G - 60;
+def rr(draw, xy, r, fill=None, outline=None, width=1):
+    draw.rounded_rectangle(xy, radius=r, fill=fill, outline=outline, width=width)
 
-  function ok(v,s){ return Number(v)>=s; }
+def gradient_rect(img, x1, y1, x2, y2, c1, c2):
+    draw = ImageDraw.Draw(img)
+    steps = x2 - x1
+    for i in range(steps):
+        t = i / max(steps-1, 1)
+        col = tuple(int(c1[k]+(c2[k]-c1[k])*t) for k in range(3))
+        draw.line([(x1+i, y1),(x1+i, y2)], fill=col)
 
-  function pill(v,s,unit){
-    const isOk=ok(v,s);
-    return {bg:isOk?'#bbf7d0':'#fecaca',color:isOk?'#14532d':'#b91c1c',text:`${isOk?'✓':'!'} ${Number(v).toLocaleString()} ${unit}`};
-  }
-  function pillB(has){
-    return {bg:has?'#bbf7d0':'#fecaca',color:has?'#14532d':'#b91c1c',text:has?'✓ 已投保':'! 未投保'};
-  }
+def score_pct(v, s):
+    if s == 0: return 100
+    return min(100, int(float(v)/float(s)*100))
 
-  // Draw a row with icon square, label, pill
-  function row(cx, cy, iconBg, iconColor, iconPath, label, p, cardW) {
-    const pillW = 230;
-    const pillX = cx + cardW - pillW - 20;
-    return `
-      <rect x="${cx+16}" y="${cy-22}" width="44" height="44" rx="10" fill="${iconBg}"/>
-      <text x="${cx+38}" y="${cy+8}" font-size="26" text-anchor="middle" fill="${iconColor}" font-family="Arial,sans-serif" font-weight="bold">${iconPath}</text>
-      <text x="${cx+72}" y="${cy+8}" font-size="30" fill="#1f2937" font-family="Arial,sans-serif">${label}</text>
-      <rect x="${pillX}" y="${cy-18}" width="${pillW}" height="36" rx="18" fill="${p.bg}"/>
-      <text x="${pillX+pillW/2}" y="${cy+8}" font-size="22" fill="${p.color}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${p.text}</text>`;
-  }
+def pill_tag(draw, fonts, cx, cy, val, std, unit, w=185, h=38):
+    ok = float(val) >= float(std)
+    bg    = GREEN_BG if ok else RED_BG
+    color = GREEN    if ok else DARK_RED
+    icon  = '✓' if ok else '!'
+    num   = f"{int(float(val)):,}" if float(val) > 0 else '0'
+    text  = f"{icon} {num} {unit}"
+    x1, y1 = cx-w//2, cy-h//2
+    rr(draw, [x1,y1,x1+w,y1+h], h//2, fill=bg)
+    draw.text((cx, cy), text, font=fonts['xs_m'], fill=color, anchor='mm')
 
-  const lifeOk = ok(life,500);
+def pill_bool(draw, fonts, cx, cy, has, w=185, h=38):
+    bg    = GREEN_BG if has else RED_BG
+    color = GREEN    if has else DARK_RED
+    text  = '✓ 已投保' if has else '! 未投保'
+    x1, y1 = cx-w//2, cy-h//2
+    rr(draw, [x1,y1,x1+w,y1+h], h//2, fill=bg)
+    draw.text((cx, cy), text, font=fonts['xs_m'], fill=color, anchor='mm')
 
-  function header(x, y, w, hBg, iconBg, iconColor, iconText, title, titleColor, subtitle, subColor) {
-    return `
-      <rect x="${x}" y="${y}" width="${w}" height="100" rx="24" fill="${hBg}"/>
-      <rect x="${x+16}" y="${y+16}" width="68" height="68" rx="16" fill="${iconBg}"/>
-      <text x="${x+50}" y="${y+60}" font-size="38" text-anchor="middle" fill="${iconColor}" font-family="Arial,sans-serif" font-weight="bold">${iconText}</text>
-      <text x="${x+100}" y="${y+52}" font-size="44" fill="${titleColor}" font-weight="bold" font-family="Arial,sans-serif">${title}</text>
-      <text x="${x+100}" y="${y+80}" font-size="24" fill="${subColor}" font-family="Arial,sans-serif">${subtitle}</text>`;
-  }
+def progress_bar(draw, x, y, w, pct, color, h=14):
+    rr(draw, [x,y,x+w,y+h], h//2, fill=(235,235,240))
+    if pct > 0:
+        bar_w = max(h, int(w*pct/100))
+        rr(draw, [x,y,x+bar_w,y+h], h//2, fill=color)
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-<defs>
-  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0%" stop-color="#eef2ff"/>
-    <stop offset="100%" stop-color="#fdf4ff"/>
-  </linearGradient>
-  <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0%" stop-color="#8b5cf6"/>
-    <stop offset="100%" stop-color="#ec4899"/>
-  </linearGradient>
-  <filter id="sh"><feDropShadow dx="0" dy="4" stdDeviation="14" flood-color="#0000001a"/></filter>
-</defs>
-<rect width="${W}" height="${H}" fill="url(#bg)"/>
+def draw_card(img, fonts, x, y, w, h,
+              title, subtitle,
+              border_color, header_bg, title_color, sub_color, bar_color,
+              rows, pct, pct_label):
+    draw = ImageDraw.Draw(img)
+    RADIUS, PAD, HEADER_H = 22, 22, 84
+    rr(draw, [x+2,y+3,x+w+2,y+h+3], RADIUS, fill=(218,218,226))
+    rr(draw, [x,y,x+w,y+h], RADIUS, fill=WHITE, outline=border_color, width=2)
+    rr(draw, [x,y,x+w,y+HEADER_H], RADIUS, fill=header_bg)
+    draw.rectangle([x, y+HEADER_H-RADIUS, x+w, y+HEADER_H], fill=header_bg)
+    draw.text((x+PAD, y+HEADER_H//2-12), title,    font=fonts['lg_b'], fill=title_color, anchor='lm')
+    draw.text((x+PAD, y+HEADER_H//2+22), subtitle, font=fonts['xs'],   fill=sub_color,   anchor='lm')
+    draw.line([x+PAD, y+HEADER_H, x+w-PAD, y+HEADER_H], fill=(225,225,235), width=1)
+    ROW_H  = 54
+    row_y0 = y + HEADER_H + 18
+    pill_cx = x + w - 108
+    for i, (label, pill_fn) in enumerate(rows):
+        ry = row_y0 + i*ROW_H + ROW_H//2
+        draw.text((x+PAD, ry), label, font=fonts['sm_m'], fill=DARK, anchor='lm')
+        pill_fn(draw, fonts, pill_cx, ry)
+    bar_y = y + h - 58
+    draw.text((x+PAD, bar_y-6), f'{pct_label} {pct}%', font=fonts['sm_b'], fill=bar_color, anchor='lm')
+    progress_bar(draw, x+PAD, bar_y+20, w-PAD*2, pct, bar_color)
 
-<!-- TL 小疾病 -->
-<rect x="0" y="0" width="${TLW}" height="${TLH}" rx="28" fill="white" filter="url(#sh)"/>
-${header(0,0,TLW,'#eff6ff','#dbeafe','#1d4ed8','＋','小疾病','#1d4ed8','住院相關保障','#93c5fd')}
-<line x1="16" y1="104" x2="${TLW-16}" y2="104" stroke="#e0f2fe" stroke-width="1.5"/>
-${row(0, 150, '#dbeafe', '#1d4ed8', '床', '住院日額（實支+定額）', pill(daily,3000,'元/天'), TLW)}
-${row(0, 202, '#dbeafe', '#1d4ed8', '✂', '手術（實支實付）', pill(surgeryFixed,50000,'元'), TLW)}
-${row(0, 254, '#dbeafe', '#1d4ed8', '刀', '手術（定額手術）', pill(surgeryFixed,50000,'元'), TLW)}
-${row(0, 306, '#dbeafe', '#1d4ed8', '藥', '雜費', pill(inpatient,100000,'元'), TLW)}
+def draw_center_circle(img, fonts, cx, cy, R, life):
+    overlay = Image.new('RGBA', img.size, (0,0,0,0))
+    od = ImageDraw.Draw(overlay)
+    for i in range(5, 0, -1):
+        od.ellipse([cx-R-i*7, cy-R-i*7, cx+R+i*7, cy+R+i*7], fill=(138,92,246, 12))
+    od.ellipse([cx-R, cy-R, cx+R, cy+R], fill=(255,255,255,255), outline=(167,139,250,255), width=7)
+    od.text((cx, cy-48), '壽險保額', font=fonts['md_b'], fill=PURPLE, anchor='mm')
+    life_val  = float(life)
+    life_text = f"{int(life_val)}萬" if life_val > 0 else '未投保'
+    life_color= GREEN if life_val >= 500 else DARK_RED
+    od.text((cx, cy+8),  life_text, font=fonts['xxl_b'], fill=life_color, anchor='mm')
+    status = '✓ 保額充足' if life_val >= 500 else '建議500萬以上'
+    s_color= GREEN if life_val >= 500 else ORANGE
+    od.text((cx, cy+62), status, font=fonts['xs_m'], fill=s_color, anchor='mm')
+    return Image.alpha_composite(img.convert('RGBA'), overlay).convert('RGB')
 
-<!-- TR 小意外 -->
-<rect x="${CX+R+G}" y="0" width="${TRW}" height="${TLH}" rx="28" fill="white" filter="url(#sh)"/>
-${header(CX+R+G,0,TRW,'#fff1f2','#ffe4e6','#be123c','＋','小意外','#be123c','意外相關保障','#fda4af')}
-<line x1="${CX+R+G+16}" y1="104" x2="${CX+R+G+TRW-16}" y2="104" stroke="#ffe4e6" stroke-width="1.5"/>
-${row(CX+R+G, 150, '#ffe4e6', '#be123c', '急', '意外門診', pill(accident,10000,'元'), TRW)}
-${row(CX+R+G, 202, '#ffe4e6', '#be123c', '骨', '骨折未住院', pill(fracture,30000,'元'), TRW)}
-${row(CX+R+G, 254, '#ffe4e6', '#be123c', '院', '意外住院日額', pillB(Number(daily)>0), TRW)}
+def generate_image(data):
+    name       = data.get('name', '')
+    date_str   = data.get('date', '')
+    daily      = float(data.get('daily',        0))
+    surgery    = float(data.get('surgeryFixed', 0))
+    inpatient  = float(data.get('inpatient',    0))
+    fracture   = float(data.get('fracture',     0))
+    accident   = float(data.get('accident',     0))
+    acc_death  = float(data.get('accDeath',     0))
+    disability = float(data.get('disability',   0))
+    critical   = float(data.get('critical',     0))
+    cancer     = float(data.get('cancer',       0))
+    ltc        = float(data.get('ltc',          0))
+    chemo      = float(data.get('chemo',        0))
+    cancer_hosp= float(data.get('cancerHosp',   0))
+    life       = float(data.get('life',         0))
 
-<!-- BL 大疾病 -->
-<rect x="0" y="${CY+R+G}" width="${TLW}" height="${BLH}" rx="28" fill="white" filter="url(#sh)"/>
-${header(0,CY+R+G,TLW,'#f5f3ff','#ede9fe','#6d28d9','癌','大疾病','#6d28d9','重大疾病保障','#c4b5fd')}
-<line x1="16" y1="${CY+R+G+104}" x2="${TLW-16}" y2="${CY+R+G+104}" stroke="#ede9fe" stroke-width="1.5"/>
-${row(0, CY+R+G+150, '#ede9fe', '#6d28d9', '心', '重大傷病', pill(critical,100,'萬'), TLW)}
-${row(0, CY+R+G+202, '#ede9fe', '#6d28d9', '盾', '重大疾病', pill(critical,100,'萬'), TLW)}
-${row(0, CY+R+G+254, '#ede9fe', '#6d28d9', '症', '癌症一次金', pill(cancer,100,'萬'), TLW)}
-${row(0, CY+R+G+306, '#ede9fe', '#6d28d9', '療', '化療/放療', pill(0,1,'萬'), TLW)}
-${row(0, CY+R+G+358, '#ede9fe', '#6d28d9', '院', '癌症住院', pill(0,3000,'元/日'), TLW)}
-${row(0, CY+R+G+410, '#ede9fe', '#6d28d9', '照', '長照月給付', pill(ltc,30000,'元/月'), TLW)}
+    fonts = load_fonts()
 
-<!-- BR 大意外 -->
-<rect x="${CX+R+G}" y="${CY+R+G}" width="${TRW}" height="${BLH}" rx="28" fill="white" filter="url(#sh)"/>
-${header(CX+R+G,CY+R+G,TRW,'#fff7ed','#ffedd5','#c2410c','⚡','大意外','#c2410c','意外相關保障','#fdba74')}
-<line x1="${CX+R+G+16}" y1="${CY+R+G+104}" x2="${CX+R+G+TRW-16}" y2="${CY+R+G+104}" stroke="#ffedd5" stroke-width="1.5"/>
-${row(CX+R+G, CY+R+G+150, '#ffedd5', '#c2410c', '故', '意外身故', pill(accDeath,500,'萬'), TRW)}
-${row(CX+R+G, CY+R+G+202, '#ffedd5', '#c2410c', '殘', '殘廢（1-11級）', pill(disability,500,'萬'), TRW)}
-${row(CX+R+G, CY+R+G+254, '#ffedd5', '#c2410c', '全', '全殘', pill(disability,500,'萬'), TRW)}
+    W, H   = 1080, 1780
+    PAD    = 30
+    GAP    = 18
+    R_CIRC = 108          # 圓圈半徑
 
-<!-- Cross lines -->
-<line x1="${CX}" y1="${TLH}" x2="${CX}" y2="${CY-R-G}" stroke="#d1d5db" stroke-width="2" stroke-dasharray="10,7"/>
-<line x1="${CX}" y1="${CY+R+G}" x2="${CX}" y2="${CY+R+G+BLH}" stroke="#d1d5db" stroke-width="2" stroke-dasharray="10,7"/>
-<line x1="${TLW}" y1="${CY}" x2="${CX-R-G}" y2="${CY}" stroke="#d1d5db" stroke-width="2" stroke-dasharray="10,7"/>
-<line x1="${CX+R+G}" y1="${CY}" x2="${W}" y2="${CY}" stroke="#d1d5db" stroke-width="2" stroke-dasharray="10,7"/>
+    # ── 關鍵：卡片寬度必須讓兩張卡之間有足夠空隙容納圓圈 ──
+    # 兩張卡左右各留 PAD，中間兩側各退 R_CIRC+16
+    CW = (W // 2) - PAD - (R_CIRC + 16)   # = 540 - 30 - 124 = 386
 
-<!-- Center -->
-<circle cx="${CX}" cy="${CY}" r="${R+12}" fill="white" filter="url(#sh)"/>
-<circle cx="${CX}" cy="${CY}" r="${R+4}" fill="white"/>
-<circle cx="${CX}" cy="${CY}" r="${R+4}" fill="none" stroke="url(#ring)" stroke-width="10"/>
-<!-- Shield path -->
-<g transform="translate(${CX-40},${CY-90})">
-  <path d="M40 0 L80 15 L80 50 C80 70 60 85 40 90 C20 85 0 70 0 50 L0 15 Z" fill="#8b5cf6" opacity="0.15"/>
-  <path d="M40 8 L72 20 L72 50 C72 66 56 78 40 82 C24 78 8 66 8 50 L8 20 Z" fill="none" stroke="#8b5cf6" stroke-width="3"/>
-  <path d="M28 45 L36 53 L54 35" fill="none" stroke="#8b5cf6" stroke-width="5" stroke-linecap="round"/>
-</g>
-<text x="${CX}" y="${CY+16}" font-size="40" fill="#7c3aed" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">壽險</text>
-<text x="${CX}" y="${CY+58}" font-size="${Number(life)>999?'28':'34'}" fill="${lifeOk?'#14532d':'#b91c1c'}" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">${life?life+'萬':'未投保'}</text>
-${!lifeOk?`<text x="${CX}" y="${CY+84}" font-size="18" fill="#b91c1c" text-anchor="middle" font-family="Arial,sans-serif">建議500萬以上</text>`:`<text x="${CX}" y="${CY+84}" font-size="18" fill="#14532d" text-anchor="middle" font-family="Arial,sans-serif">✓ 保額充足</text>`}
+    GRID_Y     = 160
+    TOP_CARD_H = 390
+    BOT_CARD_H = 510
+    LX = PAD
+    RX = W - PAD - CW                     # 右卡靠右對齊
+    BOT_Y = GRID_Y + TOP_CARD_H + GAP
 
-<!-- Footer -->
-<text x="${CX}" y="${H-24}" font-size="28" fill="#7c3aed" text-anchor="middle" font-weight="bold" font-family="Arial,sans-serif">安心守護・全面保障</text>
-<text x="${CX}" y="${H-2}" font-size="20" fill="#9ca3af" text-anchor="middle" font-family="Arial,sans-serif">${name}・保寶險保障分析報告</text>
-</svg>`;
-}
+    img = Image.new('RGB', (W, H), BG)
+    gradient_rect(img, 0, 0, W, 140, PURPLE_GRAD, PURPLE_END)
+    draw = ImageDraw.Draw(img)
+    draw.text((W//2, 70), '保單健診分析報告', font=fonts['title_b'], fill=WHITE, anchor='mm')
 
-module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  try {
-    const data = req.body;
-    const svg = generateSVG(data);
-    const svgB64 = Buffer.from(svg).toString('base64');
-    const boundary = 'B' + Date.now();
-    const timestamp = Math.floor(Date.now() / 1000);
-    const sig = crypto.createHash('sha1').update(`format=png&timestamp=${timestamp}${API_SECRET}`).digest('hex');
-    const uploadBody = [
-      `--${boundary}\r\nContent-Disposition: form-data; name="file"\r\n\r\ndata:image/svg+xml;base64,${svgB64}`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="format"\r\n\r\npng`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="api_key"\r\n\r\n${API_KEY}`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="timestamp"\r\n\r\n${timestamp}`,
-      `--${boundary}\r\nContent-Disposition: form-data; name="signature"\r\n\r\n${sig}`,
-      `--${boundary}--`
-    ].join('\r\n');
-    const url = await new Promise((resolve, reject) => {
-      const r = https.request({
-        hostname: 'api.cloudinary.com',
-        path: `/v1_1/${CLOUD_NAME}/image/upload`,
-        method: 'POST',
-        headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': Buffer.byteLength(uploadBody) }
-      }, res2 => {
-        let d=''; res2.on('data',c=>d+=c);
-        res2.on('end',()=>{ try{ const r=JSON.parse(d); if(r.secure_url) resolve(r.secure_url.replace(/\.[^.]+$/,'.png')); else reject(new Error(d)); }catch(e){reject(new Error(d));} });
-      });
-      r.on('error',reject); r.write(uploadBody); r.end();
-    });
-    res.json({ url });
-  } catch(e) {
-    console.error('Error:', e.message);
-    res.status(500).json({ error: e.message });
-  }
-};
+    sc = score_pct
+    tl_pct = int(sc(daily,3000)*0.4    + sc(surgery,50000)*0.3   + sc(inpatient,100000)*0.3)
+    tr_pct = int(sc(accident,10000)*0.4 + sc(fracture,30000)*0.3  + (100 if daily>0 else 0)*0.3)
+    bl_pct = int(sc(critical,100)*0.2   + sc(cancer,100)*0.2     + sc(ltc,30000)*0.2
+                 + sc(chemo,1)*0.2      + sc(cancer_hosp,3000)*0.2)
+    br_pct = int(sc(acc_death,500)*0.4  + sc(disability,500)*0.4  + (100 if disability>0 else 0)*0.2)
+
+    draw_card(img, fonts, LX, GRID_Y, CW, TOP_CARD_H,
+        '小疾病保障', '住院相關醫療',
+        BLUE_BORDER, BLUE_LIGHT, BLUE, GRAY, BLUE,
+        [('住院日額', lambda d,f,cx,cy: pill_tag(d,f,cx,cy, daily,    3000, '元')),
+         ('手術實支', lambda d,f,cx,cy: pill_tag(d,f,cx,cy, surgery,  50000,'元')),
+         ('醫療雜費', lambda d,f,cx,cy: pill_tag(d,f,cx,cy, inpatient,100000,'元'))],
+        tl_pct, '保障充足度')
+
+    draw_card(img, fonts, RX, GRID_Y, CW, TOP_CARD_H,
+        '小意外保障', '常規意外傷害',
+        RED_BORDER, RED_LIGHT, RED, GRAY, RED,
+        [('意外門診',   lambda d,f,cx,cy: pill_tag( d,f,cx,cy, accident,10000,'元')),
+         ('骨折未住院', lambda d,f,cx,cy: pill_tag( d,f,cx,cy, fracture,30000,'元')),
+         ('意外住院',   lambda d,f,cx,cy: pill_bool(d,f,cx,cy, daily>0))],
+        tr_pct, '保障充足度')
+
+    draw_card(img, fonts, LX, BOT_Y, CW, BOT_CARD_H,
+        '大疾病保障', '重大惡性疾病',
+        PURPLE_MID, PURPLE_LIGHT, PURPLE, GRAY, PURPLE,
+        [('重大傷病',   lambda d,f,cx,cy: pill_tag(d,f,cx,cy, critical,    100, '萬')),
+         ('重大疾病',   lambda d,f,cx,cy: pill_tag(d,f,cx,cy, critical,    100, '萬')),
+         ('癌症一次金', lambda d,f,cx,cy: pill_tag(d,f,cx,cy, cancer,      100, '萬')),
+         ('癌症住院',   lambda d,f,cx,cy: pill_tag(d,f,cx,cy, cancer_hosp, 3000,'元')),
+         ('長照月給付', lambda d,f,cx,cy: pill_tag(d,f,cx,cy, ltc,         30000,'元'))],
+        bl_pct, '保障充足度')
+
+    draw_card(img, fonts, RX, BOT_Y, CW, BOT_CARD_H,
+        '大意外保障', '惡性意外失能',
+        ORANGE_BORDER, ORANGE_LIGHT, ORANGE, GRAY, ORANGE,
+        [('意外身故',      lambda d,f,cx,cy: pill_tag(d,f,cx,cy, acc_death, 500,'萬')),
+         ('失能 1-11 級',  lambda d,f,cx,cy: pill_tag(d,f,cx,cy, disability,500,'萬')),
+         ('全殘保障',      lambda d,f,cx,cy: pill_tag(d,f,cx,cy, disability,500,'萬'))],
+        br_pct, '保障充足度')
+
+    # 圓圈畫在最後，壓在卡片上方（中間空隙內）
+    CX_C = W // 2
+    CY_C = GRID_Y + TOP_CARD_H + GAP // 2
+    img = draw_center_circle(img, fonts, CX_C, CY_C, R_CIRC, life)
+
+    # 建議區（純文字，不用 emoji 避免亂碼）
+    draw = ImageDraw.Draw(img)
+    SUG_Y = BOT_Y + BOT_CARD_H + 30
+    SUG_H = 230
+    rr(draw, [PAD, SUG_Y, W-PAD, SUG_Y+SUG_H], 22, fill=WHITE, outline=PURPLE_MID, width=2)
+    draw.text((PAD+28, SUG_Y+32), '醫療保障缺口核心建議', font=fonts['md_b'], fill=PURPLE, anchor='lm')
+    draw.line([PAD+28, SUG_Y+68, W-PAD-28, SUG_Y+68], fill=(225,225,235), width=1)
+
+    issues = []
+    if daily    < 3000:  issues.append('▶ 住院日額防線脆弱｜當前額度難填自費病房差額，建議規劃實支實付醫療險')
+    if critical < 100:   issues.append('▶ 重大傷病保障真空｜惡性疾病療程動輒百萬，建議拉高重大傷病一次金')
+    if ltc      < 30000: issues.append('▶ 長照月給付不足｜失能照護是家庭隱形黑洞，建議補充月給付3萬以上')
+    if not issues:       issues = ['▶ 整體保障防禦完備｜四大帳戶規劃健全，建議每兩年視家庭責任微調']
+
+    for i, text in enumerate(issues[:3]):
+        draw.text((PAD+28, SUG_Y + 90 + i*46), text, font=fonts['sm_m'], fill=DARK, anchor='lm')
+
+    # Footer
+    FT_Y = SUG_Y + SUG_H + 36
+    draw.line([PAD, FT_Y, W-PAD, FT_Y], fill=(220,220,232), width=1)
+    draw.text((PAD,   FT_Y+34), f'受檢人：{name}     檢測日期：{date_str}', font=fonts['sm'], fill=DARK, anchor='lm')
+    draw.text((W-PAD, FT_Y+34), 'PolicyPal 保單夥伴', font=fonts['sm_b'], fill=PURPLE, anchor='rm')
+    draw.text((W//2,  FT_Y+76), '本分析報告僅供參考・實際保險權益及理賠規範悉以各壽產險公司保單條款為準',
+              font=fonts['xs'], fill=GRAY, anchor='mm')
+
+    buf = io.BytesIO()
+    img.save(buf, format='PNG', dpi=(144,144))
+    return buf.getvalue()
+
+if __name__ == '__main__':
+    test_data = {
+        'name':'王小明','date':'2026-05-25',
+        'daily':2000,'surgeryFixed':30000,'inpatient':80000,
+        'fracture':20000,'accident':8000,'accDeath':300,'disability':200,
+        'critical':80,'cancer':60,'ltc':20000,'chemo':0,'cancerHosp':0,'life':400,
+    }
+    img_bytes = generate_image(test_data)
+    with open('/mnt/user-data/outputs/preview_v3.png','wb') as f:
+        f.write(img_bytes)
+    print('done')
